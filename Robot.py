@@ -1,5 +1,8 @@
 import random
 
+R_TYPE = {'path':-0.1, 'wall':-10, 'bomb':-30, 'destination':50}
+D_REV = {'u':'d', 'd':'u', 'l':'r', 'r':'l'}
+
 class Robot(object):
 
     def __init__(self, maze, alpha=0.5, gamma=0.9, epsilon0=0.5):
@@ -19,6 +22,7 @@ class Robot(object):
 
         self.Qtable = {}
         self.Ntable = {}
+        self.Rtype = {}
         self.reset()
 
     def reset(self):
@@ -68,9 +72,8 @@ class Robot(object):
         # Qtable[state] ={'u':xx, 'd':xx, ...}
         # If Qtable[state] already exits, then do
         # not change it.
-        if state not in self.Qtable:
-            self.Qtable[state] = {'u':0, 'd':0, 'l':0, 'r':0}
-            self.Ntable[state] = {'u':0, 'd':0, 'l':0, 'r':0}
+        self.Qtable.setdefault(state, {a:.0 for a in self.valid_actions})
+        self.Ntable.setdefault(state, {a:0 for a in self.valid_actions})
 
     def choose_action(self):
         """
@@ -85,7 +88,7 @@ class Robot(object):
         if self.learning:
             if is_random_exploration():
                 # TODO 6. Return random choose aciton
-                return random.choice(list(self.Qtable[self.state].keys()))
+                return random.choice(list(self.Qtable[self.state]))
             else:
                 # TODO 7. Return action with highest q value
                 return max(self.Qtable[self.state], key=self.Qtable[self.state].get)
@@ -94,7 +97,7 @@ class Robot(object):
             return max(self.Qtable[self.state], key=self.Qtable[self.state].get)
         else:
             # TODO 6. Return random choose aciton
-            return random.choice(list(self.Qtable[self.state].keys()))
+            return random.choice(list(self.Qtable[self.state]))
 
     def update_Qtable(self, r, action, next_state):
         """
@@ -103,9 +106,24 @@ class Robot(object):
         if self.learning:
             # TODO 8. When learning, update the q table according
             # to the given rules
-            state, q, n= self.state, self.Qtable, self.Ntable
-            q[state][action] += self.alpha * (r + self.gamma * max(q[next_state].values()) - q[state][action])
-            n[state][action] += 1
+            state, q, n, rtype= self.state, self.Qtable, self.Ntable, self.Rtype
+            # 碰墙则移除此动作，但仍然统计计数，减小随机
+            if state == next_state:
+                q[state].pop(action)
+                n[state][action] += 1
+            else:
+                rtype[next_state] = r
+                # 如果是炸弹根据炸弹位置对周围探索次数情况减小reward，以便探索炸弹后面的情况
+                if r == R_TYPE['bomb']:
+                    r *= 1 / (1 + 2.718 ** (4 - sum(n[next_state].values()) ))
+                q[state][action] += self.alpha * (r + self.gamma * max(q[next_state].values()) - q[state][action])
+                n[state][action] += 1                
+                # 基于规则无需实践反向学习，但不能改变终点的Q值
+                if state in rtype and rtype[next_state] != R_TYPE['destination']:
+                    action = D_REV[action]
+                    next_state, state = state, next_state
+                    q[state][action] += self.alpha * (r + self.gamma * max(q[next_state].values()) - q[state][action])
+                    n[state][action] += 1
 
     def update(self):
         """
